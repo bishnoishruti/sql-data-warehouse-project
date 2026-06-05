@@ -1,5 +1,27 @@
--- Check for Null Values or Duplicates in Primary Key (Before Load)
+/*
+==================================================
+Data Quality Check Script
+==================================================
 
+Script Purpose:
+    This script performs many different quality checks for data consistency, standardization
+	and validation across the 'silver' scehma. Different quality checks done here are:
+	- Null or Duplicate Primary Keys
+	- Unwated spaces in atring fields
+	- Data standardization and consistency.
+	- Invalid date format, ranges and orders.
+	- Data consistency between related fields.
+
+Usage Notes:
+	- 
+    Run this script to re-define the DDL structure of the 'silver' tables.
+*/
+
+--===================================================
+--crm_cust_info Bronze Layer Profiling before Loading 
+--===================================================
+
+-- Check for Null Values or Duplicates in Primary Key
 SELECT
 	cst_id,
 	COUNT(*)
@@ -7,21 +29,12 @@ FROM bronze.crm_cust_info
 GROUP BY cst_id
 HAVING COUNT(*)> 1 OR cst_id IS NULL;
 
+-- Profile Duplicate Reocrd Check with example
 SELECT 
 *,
 ROW_NUMBER() OVER (PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_recent
 FROM bronze.crm_cust_info
 WHERE cst_id = 29466;
-
-SELECT
-*
-FROM (
-		SELECT
-		*,
-		ROW_NUMBER() OVER (PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_recent
-		FROM bronze.crm_cust_info
-		WHERE cst_id IS NOT NULL
-) t WHERE flag_recent = 1;
 
 -- Check for Whitespace
 SELECT cst_firstname
@@ -32,22 +45,16 @@ SELECT cst_lastname
 FROM bronze.crm_cust_info
 WHERE cst_lastname != TRIM(cst_lastname);
 
--- Fixing Whitespace
-SELECT cst_id,
-cst_key,
-TRIM(cst_firstname),
-TRIM(cst_lastname),
-cst_marital_status,
-cst_gndr,
-cst_create_date
-FROM bronze.crm_cust_info;
-
 -- Data Standardization & Consistency
 SELECT DISTINCT cst_gndr
 FROM bronze.crm_cust_info;
 
 SELECT DISTINCT cst_marital_status
 FROM bronze.crm_cust_info;
+
+--===================================================
+--crm_cust_info Silver Layer Validation After Loading 
+--===================================================
 
 -- Check for Null Values or Duplicates in Primary Key (After Load)
 SELECT
@@ -57,12 +64,6 @@ FROM silver.crm_cust_info
 GROUP BY cst_id
 HAVING COUNT(*)> 1 OR cst_id IS NULL;
 
-SELECT 
-*,
-ROW_NUMBER() OVER (PARTITION BY cst_id ORDER BY cst_create_date DESC) as flag_recent
-FROM silver.crm_cust_info
-WHERE cst_id = 29466;
-
 -- Check for Whitespace
 SELECT cst_firstname
 FROM silver.crm_cust_info
@@ -76,19 +77,20 @@ WHERE cst_lastname != TRIM(cst_lastname);
 SELECT DISTINCT cst_gndr
 FROM silver.crm_cust_info;
 
-SELECT *
+SELECT DISTINCT cst_marital_status
 FROM silver.crm_cust_info;
 
--- Check for Null Values or Duplicates in Primary Key (Before Loading)
-SELECT * FROM bronze.crm_prd_info;
+--===================================================
+--crm_prd_info Bronze Layer Profiling before Loading 
+--===================================================
 
+-- Check for Null Values or Duplicates in Primary Key
 SELECT
 	prd_id,
 	COUNT(*)
 FROM bronze.crm_prd_info
 GROUP BY prd_id
 HAVING COUNT(*)> 1 OR prd_id IS NULL;
-
 
 -- Check for Whitespace
 SELECT prd_nm
@@ -111,16 +113,17 @@ SELECT
 FROM bronze.crm_prd_info
 WHERE CONVERT(DATE, prd_end_dt, 105) < CONVERT(DATE, prd_start_dt, 105)
 
--- Check for Null Values or Duplicates in Primary Key (After Loading)
-SELECT * FROM silver.crm_prd_info;
+--===================================================
+--crm_prd_info Silver Layer Validation After Loading 
+--===================================================
 
+	-- Check for Null Values or Duplicates in Primary Key (After Loading)
 SELECT
 	prd_id,
 	COUNT(*)
 FROM silver.crm_prd_info
 GROUP BY prd_id
 HAVING COUNT(*)> 1 OR prd_id IS NULL;
-
 
 -- Check for Whitespace
 SELECT prd_nm
@@ -141,9 +144,9 @@ SELECT *
 FROM silver.crm_prd_info
 WHERE prd_end_dt < prd_start_dt
 
--- Check (Before Loading)
-
-SELECT * FROM bronze.crm_sales_details
+--=======================================================
+--crm_sales_details Bronze Layer Profiling before Loading 
+--=======================================================
 
 -- Check for Invalid Dates
 SELECT 
@@ -181,60 +184,42 @@ WHERE sls_order_dt > sls_ship_dt OR sls_order_dt > sls_due_dt
 -- Valyes must not be NULL, zero, or negative
 
 SELECT DISTINCT
-sls_sales AS old_sls_sales,
+sls_sales,
 sls_quantity,
-sls_price AS old_sls_price,
-CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales != sls_quantity * ABS(sls_price)
-		THEN sls_quantity * ABS(sls_price)
-	ELSE sls_sales
-END AS sls_sales,
-
-CASE WHEN sls_price IS NULL OR sls_price <=0
-		THEN sls_sales / NULLIF(sls_quantity,0)
-	ELSE sls_price
-END AS sls_price
+sls_price
 FROM bronze.crm_sales_details
 WHERE sls_sales != sls_quantity * sls_price
 OR sls_sales IS NULL OR sls_quantity IS NULL OR sls_price IS NULL
-OR sls_sales <= 0 OR sls_quantity <= 0 OR sls_price <=0
-ORDER BY sls_sales, sls_quantity, sls_price;
+OR sls_sales <= 0 OR sls_quantity <= 0 OR sls_price <=0;
 
---After Loading
-SELECT * FROM silver.crm_sales_details;
+--=======================================================
+--crm_sales_details Silver Layer Validation After Loading 
+--=======================================================
 
 -- Check for Invalid Ddate Orders
 SELECT
 *
 FROM silver.crm_sales_details
-WHERE sls_order_dt > sls_ship_dt OR sls_order_dt > sls_due_dt
-
+WHERE sls_order_dt > sls_ship_dt OR sls_order_dt > sls_due_dt;
 
 -- Checking Data Consistency: For Sales, Quantity and Price
 -- Sales = Quantity * Price
--- Valyes must not be NULL, zero, or negative
+-- Values must not be NULL, zero, or negative
 
 SELECT DISTINCT
-sls_sales AS old_sls_sales,
+sls_sales
 sls_quantity,
-sls_price AS old_sls_price,
-CASE WHEN sls_sales IS NULL OR sls_sales <= 0 OR sls_sales != sls_quantity * ABS(sls_price)
-		THEN sls_quantity * ABS(sls_price)
-	ELSE sls_sales
-END AS sls_sales,
-
-CASE WHEN sls_price IS NULL OR sls_price <=0
-		THEN sls_sales / NULLIF(sls_quantity,0)
-	ELSE sls_price
-END AS sls_price
+sls_price
 FROM silver.crm_sales_details
 WHERE sls_sales != sls_quantity * sls_price
 OR sls_sales IS NULL OR sls_quantity IS NULL OR sls_price IS NULL
-OR sls_sales <= 0 OR sls_quantity <= 0 OR sls_price <=0
-ORDER BY sls_sales, sls_quantity, sls_price;
+OR sls_sales <= 0 OR sls_quantity <= 0 OR sls_price <=0;
 
--- Before Loading
+--=======================================================
+--erp_cust_az12 Bronze Layer Profiling before Loading 
+--=======================================================
+
 --Identifying Out-of-Range Dates
-
 SELECT DISTINCT
 CONVERT(DATE, bdate, 105) AS bdate
 FROM bronze.erp_cust_az12
@@ -244,56 +229,48 @@ OR CONVERT(DATE, bdate, 105) > GETDATE();
 --Data Standardization & Consistency
 SELECT DISTINCT 
 gen,
-CASE WHEN UPPER(TRIM(gen)) IN ('F', 'Female') THEN 'Female'
-	 WHEN UPPER(TRIM(gen)) IN ('M', 'Male') THEN 'Male'
-	 ELSE 'Unknown'
-END AS gen
 FROM bronze.erp_cust_az12;
 
--- After Load
+--=======================================================
+--erp_cust_az12 Silver Layer Validation After Loading 
+--=======================================================
+
 -- Dates Out of Range
 SELECT DISTINCT
-CONVERT(DATE, bdate, 105) AS bdate
+	bdate
 FROM silver.erp_cust_az12
-WHERE CONVERT(DATE, bdate, 105) < '1924-01-01' 
-OR CONVERT(DATE, bdate, 105) > GETDATE();
+WHERE bdate < '1924-01-01' 
+OR bdate > GETDATE();
 
 --Data Standardization & Consistency
 SELECT DISTINCT 
 gen
 FROM silver.erp_cust_az12;
 
-SELECT * FROM silver.erp_cust_az12;
-
---Before Load
-
+--=====================================================
+--erp_loc_a101 Bronze Layer Profiling before Loading 
+--=====================================================
 -- Data Standardization & Consistency
 SELECT DISTINCT
 cntry
 FROM bronze.erp_loc_a101
 ORDER BY cntry;
 
-SELECT DISTINCT
-cntry AS old_cntry,
-CASE WHEN TRIM(cntry) = 'DE' THEN 'Germany'
-	 WHEN TRIM(cntry) IN ('US', 'USA') THEN 'United States'
-	 WHEN TRIM(cntry) = '' OR cntry is NULL THEN 'Unknown'
-	 ELSE TRIM(cntry)
-END AS cntry
-FROM bronze.erp_loc_a101
-ORDER BY old_cntry;
+--=======================================================
+--erp_loc_a101 Silver Layer Validation After Loading 
+--=======================================================
 
--- After load
+-- Checking Data Consistency
 SELECT DISTINCT
 cntry
 FROM silver.erp_loc_a101
 ORDER BY cntry;
 
-SELECT * FROM silver.erp_loc_a101;
+--=====================================================
+--erp_px_cat_g1v2 Bronze Layer Profiling before Loading 
+--=====================================================
 
---Before Load
-
--- Unwanted Spaces
+-- Whitespaces Spaces
 SELECT * FROM bronze.erp_px_cat_g1v2
 WHERE cat != TRIM(cat) OR subcat != TRIM(subcat) OR maintenance != TRIM(maintenance);
 
@@ -310,5 +287,9 @@ SELECT DISTINCT
 maintenance
 FROM bronze.erp_px_cat_g1v2;
 
--- After load
-SELECT * FROM silver.erp_px_cat_g1v2;
+--=======================================================
+--erp_px_cat_g1v2 Silver Layer Validation After Loading 
+--=======================================================
+SELECT * 
+FROM silver.erp_px_cat_g1v2
+WHERE cat != TRIM(cat) OR subcat != TRIM(subcat) OR maintenance != TRIM(maintenance);
